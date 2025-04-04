@@ -266,3 +266,43 @@ autoplot(wf)
 ```{r}
 rank_results(wf, rank_metric = "rsq", select_best = TRUE)
 ```
+
+
+# Question 3
+
+```{r}
+xgb_model <- boost_tree() %>% 
+  set_engine("xgboost") %>% 
+  set_mode("regression")
+
+nn_model <- bag_mlp() %>% 
+  set_engine("nnet") %>% 
+  set_mode("regression")
+```
+
+```{r}
+wf <- workflow_set(
+  list(rec),
+  list(
+    lm_model = lm_model,
+    rf_model = rf_model,
+    xgb_model = xgb_model,
+    nn_model = nn_model
+  )
+) %>% 
+  workflow_map("fit_resamples", resamples = camels_cv)
+  
+```
+
+```{r}
+rank_results(wf, rank_metric = "rsq", select_best = TRUE)
+
+# The random forest model was ranked the best, so I would move forward with this one. It was ranked as the model with the highest r-squared.
+```
+
+# Question 4
+
+```{r}
+
+```
+
