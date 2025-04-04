@@ -303,6 +303,71 @@ rank_results(wf, rank_metric = "rsq", select_best = TRUE)
 # Question 4
 
 ```{r}
+set.seed(123)
 
+camels_split2 <- initial_split(camels, prop = 0.75)
+camels_train2 <- training(camels_split2)
+camels_test2 <- testing(camels_split2)
+
+camels_cv2 <- vfold_cv(camels_train2, v = 10)
+```
+
+```{r}
+rec2 <- recipe(logQmean ~ aridity + p_mean, data = camels_train2) %>% 
+  step_log(all_predictors()) %>% 
+  step_interact(terms = ~ aridity:p_mean) %>% 
+  step_naomit(all_predictors(), all_outcomes())
+
+# I chose to use aridity and mean precipitation to predict logQmean because they would both have an impact on mean daily discharge, especially precipitation.
+```
+
+```{r}
+rf_model2 <- rand_forest() %>% 
+  set_engine("ranger") %>% 
+  set_mode("regression")
+
+lm_model2 <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  set_mode("regression")
+
+nn_model2 <- bag_mlp() %>% 
+  set_engine("nnet") %>% 
+  set_mode("regression")
+```
+
+```{r}
+wf2 <- workflow_set(list(rec2), list(rf_model2, lm_model2, nn_model2)) %>%
+  workflow_map('fit_resamples', resamples = camels_cv) 
+```
+
+```{r}
+autoplot(wf2)
+```
+
+```{r}
+rank_results(wf2, rank_metric = "rsq", select_best = TRUE)
+
+# I think the nn_model2 is the best because it has the lowest rmse and the highest r-squared. It is also ranked the best below.
+```
+
+```{r}
+nn_wf <- workflow() %>% 
+  add_recipe(rec2) %>% 
+  add_model(nn_model2) %>% 
+  fit(data = camels_train2)
+
+nn_data <- augment(nn_wf, new_data = camels_test2)
+dim(nn_data)
+```
+
+```{r}
+ggplot(nn_data, aes(x = logQmean, y = .pred, colour = aridity)) +
+  scale_color_viridis_c() +
+  geom_point() +
+  geom_abline() +
+  theme_linedraw() +
+  labs(title = "Observed vs. Predicted Values", x = "Log Mean Discharge", y = "Predicted", color = "Aridity")
+
+# I think the results look great as most points align, although there are some that deviate. I think this model overall did a great job of predicting the values.
 ```
 
