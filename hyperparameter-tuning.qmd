@@ -1,11 +1,15 @@
 ---
 project:
   title: "hyperparameter-tuning"
+  author: "Bella Conrad"
+  date: "2025-04-10"
   output-dir: docs
   type: website
 format: 
-  html:
+  html: 
     self-contained: true
+execute: 
+  echo: true
 ---
 
 ```{r}
