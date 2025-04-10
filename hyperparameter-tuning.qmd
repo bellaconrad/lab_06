@@ -1,0 +1,96 @@
+---
+project:
+  title: "hyperparameter-tuning"
+  output-dir: docs
+  type: website
+format: 
+  html:
+    self-contained: true
+---
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(powerjoin)
+library(dplyr)
+library(ggplot2)
+library(visdat)
+library(skimr)
+library(ggpubr)
+library(glue)
+```
+
+```{r}
+# Merge data
+root <- 'https://gdex.ucar.edu/dataset/camels/file'
+download.file('https://gdex.ucar.edu/dataset/camels/file/camels_attributes_v2.0.pdf', 
+              'data/camels_attributes_v2.0.pdf')
+
+types <- c("clim", "geol", "soil", "topo", "vege", "hydro")
+
+# Where the files live online ...
+remote_files  <- glue('{root}/camels_{types}.txt')
+
+# where we want to download the data ...
+local_files   <- glue('data/camels_{types}.txt')
+
+walk2(remote_files, local_files, download.file, quiet = TRUE)
+
+camels <- map(local_files, read_delim, show_col_types = FALSE) %>%
+  power_full_join(by = 'gauge_id')
+```
+
+```{r}
+# Read data
+head(camels)
+str(camels)
+summary(camels)
+```
+
+
+```{r}
+# Clean Data
+camels <- camels %>% 
+  drop_na()
+```
+
+
+```{r}
+# EDA
+skim(camels)
+vis_dat(camels)
+```
+
+
+```{r}
+# EDA
+ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
+  borders("state", colour = "black") + 
+  geom_point(aes(color = q_mean)) +
+  scale_color_gradient(low = "lightgreen", high = "darkgreen") +
+  ggthemes::theme_map()
+```
+
+```{r}
+# Set seed
+set.seed(123)
+camels <- camels %>% 
+  mutate(logQmean = log(q_mean))
+```
+
+```{r}
+# Split the data
+camels_split <- initial_split(camels, prop = 0.8)
+camels_train <- training(camels_split)
+camels_test <- training(camels_split)
+```
+
+```{r}
+# Create a recipe object
+rec <- recipe(logQmean ~ aridity + p_mean, data = camels_train) %>% 
+  step_log(all_predictors()) %>% 
+  step_interact(terms = ~ aridity:p_mean) %>% 
+  step_naomit(all_predictors(), all_outcomes()) %>% 
+  step_rm(gauge_lat, gauge_lon)
+```
+
