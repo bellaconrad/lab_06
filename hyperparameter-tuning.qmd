@@ -22,6 +22,8 @@ library(visdat)
 library(skimr)
 library(ggpubr)
 library(glue)
+library(baguette)
+library(purrr)
 ```
 
 ```{r}
@@ -42,6 +44,8 @@ walk2(remote_files, local_files, download.file, quiet = TRUE)
 
 camels <- map(local_files, read_delim, show_col_types = FALSE) %>%
   power_full_join(by = 'gauge_id')
+glimpse(camels)
+
 ```
 
 ```{r}
@@ -56,6 +60,8 @@ summary(camels)
 # Clean Data
 camels <- camels %>% 
   drop_na()
+camels <- camels %>% 
+  mutate(logQmean = log(q_mean))
 ```
 
 
@@ -63,6 +69,7 @@ camels <- camels %>%
 # EDA
 skim(camels)
 vis_dat(camels)
+names(camels)
 ```
 
 
@@ -78,23 +85,42 @@ ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
 ```{r}
 # Set seed
 set.seed(123)
-camels <- camels %>% 
-  mutate(logQmean = log(q_mean))
 ```
 
 ```{r}
 # Split the data
 camels_split <- initial_split(camels, prop = 0.8)
 camels_train <- training(camels_split)
-camels_test <- training(camels_split)
+camels_test <- testing(camels_split)
 ```
 
 ```{r}
 # Create a recipe object
-rec <- recipe(logQmean ~ aridity + p_mean, data = camels_train) %>% 
-  step_log(all_predictors()) %>% 
-  step_interact(terms = ~ aridity:p_mean) %>% 
-  step_naomit(all_predictors(), all_outcomes()) %>% 
+rec <- recipe(logQmean ~ aridity + p_mean + gauge_lat + gauge_lon, data = camels_train) %>%
+  step_log(all_predictors()) %>%
+  step_interact(terms = ~ aridity:p_mean) %>%
+  step_naomit(all_predictors(), all_outcomes()) %>%
   step_rm(gauge_lat, gauge_lon)
+
+```
+
+```{r}
+# Build resamples
+camels_cv <- vfold_cv(camels_train, v = 10)
+```
+
+```{r}
+# Build 3 candidate models: I am using linear models, random forest, and neural networks.
+lm_model <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  set_mode("regression")
+
+rf_model <- rand_forest() %>% 
+  set_engine("ranger", importance = "impurity") %>% 
+  set_mode("regression")
+
+nn_model <- bag_mlp() %>% 
+  set_engine("nnet") %>% 
+  set_mode("regression")
 ```
 
