@@ -11,7 +11,7 @@ format:
 execute: 
   echo: true
 ---
-
+# Lab Set Up
 ```{r}
 library(tidyverse)
 library(tidymodels)
@@ -24,6 +24,7 @@ library(ggpubr)
 library(glue)
 library(baguette)
 library(purrr)
+library(dials)
 ```
 
 ```{r}
@@ -44,7 +45,6 @@ walk2(remote_files, local_files, download.file, quiet = TRUE)
 
 camels <- map(local_files, read_delim, show_col_types = FALSE) %>%
   power_full_join(by = 'gauge_id')
-glimpse(camels)
 
 ```
 
@@ -55,7 +55,6 @@ str(camels)
 summary(camels)
 ```
 
-
 ```{r}
 # Clean Data
 camels <- camels %>% 
@@ -64,14 +63,12 @@ camels <- camels %>%
   mutate(logQmean = log(q_mean))
 ```
 
-
 ```{r}
 # EDA
 skim(camels)
 vis_dat(camels)
 names(camels)
 ```
-
 
 ```{r}
 # EDA
@@ -87,6 +84,7 @@ ggplot(data = camels, aes(x = gauge_lon, y = gauge_lat)) +
 set.seed(123)
 ```
 
+# Data Splitting
 ```{r}
 # Split the data
 camels_split <- initial_split(camels, prop = 0.8)
@@ -94,33 +92,124 @@ camels_train <- training(camels_split)
 camels_test <- testing(camels_split)
 ```
 
+# Feature Engineering
+
 ```{r}
 # Create a recipe object
-rec <- recipe(logQmean ~ aridity + p_mean + gauge_lat + gauge_lon, data = camels_train) %>%
-  step_log(all_predictors()) %>%
+rec <- recipe(logQmean ~ aridity + p_mean, data = camels_train) %>%
+  step_log(aridity, p_mean, offset = 1e-6) %>%
   step_interact(terms = ~ aridity:p_mean) %>%
-  step_naomit(all_predictors(), all_outcomes()) %>%
-  step_rm(gauge_lat, gauge_lon)
-
+  step_normalize(all_predictors()) %>%
+  step_naomit(all_predictors(), all_outcomes())
 ```
 
+# Resampling and Model Testing
 ```{r}
 # Build resamples
 camels_cv <- vfold_cv(camels_train, v = 10)
 ```
 
 ```{r}
-# Build 3 candidate models: I am using linear models, random forest, and neural networks.
+# Build 3 candidate models: I am using linear models, XGBoost, and neural networks.
 lm_model <- linear_reg() %>% 
   set_engine("lm") %>% 
   set_mode("regression")
 
-rf_model <- rand_forest() %>% 
-  set_engine("ranger", importance = "impurity") %>% 
+xgb_model <- boost_tree() %>% 
+  set_engine("xgboost") %>% 
   set_mode("regression")
 
 nn_model <- bag_mlp() %>% 
   set_engine("nnet") %>% 
   set_mode("regression")
+```
+
+
+```{r}
+wf <- workflow_set(
+  preproc = list(rec),
+  models = list(
+    lm_model = lm_model,
+    nn_model = nn_model,
+    xgb_model = xgb_model
+  )) %>% 
+  workflow_map(resamples = camels_cv)
+
+autoplot(wf)
+
+rank_results(wf, rank_metric = "rsq", select_best = TRUE)
+
+# It looks like the linear_reg was the best for me because it had the lowest rmse and highest r-squared. I selected linear_reg, the engine being lm and the mode being regression. I think it is performing well for this model because my equation does not have many predictors, which usually works well with lm.
+```
+
+# Model Tuning
+
+```{r}
+# Build a model
+tuned_lm_model <- linear_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine("glmnet") %>%
+  set_mode("regression")
+```
+
+
+```{r}
+# Create a workflow
+tuned_lm_wf <- workflow() %>% 
+  add_recipe(rec) %>% 
+  add_model(tuned_lm_model)
+```
+
+```{r}
+# Check Tunable Values/ Ranges
+dials <- extract_parameter_set_dials(tuned_lm_wf)
+
+dials$object
+```
+
+```{r}
+# Define the Search Space, (the grid_latin_hypercube() was deprecated, was told to use grid_space_filling() instead.)
+
+my.grid <- grid_space_filling(
+  dials,
+  size = 20
+)
+
+my.grid
+```
+
+```{r}
+# Tune the model
+model_params <-  tune_grid(
+    tuned_lm_wf,
+    resamples = camels_cv,
+    grid = my.grid,
+    metrics = metric_set(rmse, rsq, mae),
+    control = control_grid(save_pred = TRUE)
+  )
+
+autoplot(model_params)
+
+# This plot shows the mae, rmse, and rsq results from the tuning process. The RMSE is high when amount of regularization is 0, and when proportion of lasso penalty is .75. The rmse is also highest when amount of regularization is 0 and when proportion of lasso penalty is .75. The rsq is a bit different, with it being the highest in the apces between -2.5 and 0, with a drop, in the amount of regularization. It is also high all throughout the proportion of lasso penalty, excpet at .25, .5, and a bit lower at .75 and right past .8.
+```
+
+```{r}
+# Check the skill of the tuned model
+collect_metrics(model_params)
+best_mae <- show_best(model_params, metric = "mae", n = 1)
+
+hp_best <- select_best(model_params, metric = "mae")
+print(hp_best)
+# The first row shows the mean MAE across resamples. It also showws the standard error of the MAE estimate, the number of resamples used, and the mean standard error. Penalty is the best hyperparameter set for this model. The best model has a penatly of 0.089 and a mixture of .5. This means the model has some regularization, and is applying a Net Elastic approach.
+```
+
+```{r}
+# Finalize your model
+final_wf <- finalize_workflow(tuned_lm_wf, hp_best)
+```
+
+# Final Model Verification
+
+```{r}
+
 ```
 
