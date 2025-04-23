@@ -25,6 +25,7 @@ library(glue)
 library(baguette)
 library(purrr)
 library(dials)
+library(patchwork)
 ```
 
 ```{r}
@@ -210,6 +211,68 @@ final_wf <- finalize_workflow(tuned_lm_wf, hp_best)
 # Final Model Verification
 
 ```{r}
+last_fit <- last_fit(final_wf, split = camels_split)
+collect_metrics(last_fit)
+# The final model's rmse is is .68 and the rsq is 75%. This means that 75% of the variance is explained by the model, which is a good, high number. For the rmse, lower would be better, but this is decent.
+```
 
+```{r}
+predictions <- collect_predictions(model_params)
+```
+
+```{r}
+ggplot(predictions, aes(x = .pred, y = logQmean)) +
+  geom_point(aes(color = .pred), alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "darkred", linetype = "dashed") +
+  geom_abline(slope = 1, intercept = 0, color = "blue", linetype = "solid", linewidth = 1) +
+  scale_color_viridis_c(option = "D") +
+  labs(
+    title = "Predicted vs Actual logQmean",
+    x = "Predicted Values",
+    y = "Actual Values",
+    color = "Prediction Value"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+# Building a Map
+
+```{r}
+final_fit_full <- fit(final_wf, data = camels)
+
+augmented_preds <- augment(final_fit_full, new_data = camels)
+
+augmented_preds <- augmented_preds %>% 
+  mutate(residual_sq = (logQmean - .pred)^2)
+```
+
+```{r}
+# Map of predictions
+map_preds <- ggplot(augmented_preds, aes(x = .pred, y = logQmean)) +
+  geom_point(aes(color = .pred), size = 3, alpha = 0.8) +
+  scale_color_viridis_c(name = "Predicted") +
+  coord_fixed() +
+  labs(title = "Map of Predicted logQmean") +
+  theme_minimal()
+
+print(map_preds)
+```
+
+```{r}
+# Map of residuals
+map_resid <- ggplot(augmented_preds, aes(x = .pred, y = residual_sq)) +
+  geom_point() +
+  coord_fixed() +
+   scale_color_viridis_c(name = "Residual²") +
+  labs(title = "Map of Squared Residuals") +
+  theme_minimal()
+
+print(map_resid)
+```
+
+```{r}
+maps_combined <- map_preds + map_resid
+
+print(maps_combined)
 ```
 
