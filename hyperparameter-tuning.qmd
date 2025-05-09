@@ -150,24 +150,17 @@ rank_results(wf, rank_metric = "rsq", select_best = TRUE)
 tuned_lm_model <- linear_reg(penalty = tune(), mixture = tune()) %>%
   set_engine("glmnet") %>%
   set_mode("regression")
-```
 
-
-```{r}
 # Create a workflow
 tuned_lm_wf <- workflow() %>% 
   add_recipe(rec) %>% 
   add_model(tuned_lm_model)
-```
 
-```{r}
 # Check Tunable Values/ Ranges
 dials <- extract_parameter_set_dials(tuned_lm_wf)
 
 dials$object
-```
 
-```{r}
 # Define the Search Space, (the grid_latin_hypercube() was deprecated, was told to use grid_space_filling() instead.)
 
 my.grid <- grid_space_filling(
@@ -176,9 +169,7 @@ my.grid <- grid_space_filling(
 )
 
 my.grid
-```
 
-```{r}
 # Tune the model
 model_params <-  tune_grid(
     tuned_lm_wf,
